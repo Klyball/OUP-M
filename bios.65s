@@ -1,0 +1,1084 @@
+;OUP/M BIOS WRITTEN BY SHAO,JIAN-XIONG           
+;ON JULY 1982             
+;ERROR NO. LISTING             
+;$20 INDEX HOLE FOUND WHILE WRITING          
+;$21 INDEX HOLE FOUND WHILE READING          
+;$22 DRIVE NOT READY            
+;$23 TRACK NOT MATCH            
+;$24 DISK WRITING PROTECTION            
+;$25 I/O DEVICE NOT DEFINED           
+;$40 BUFFER AND DISK NOT MATCH          
+;$80 PARITY ERROR             
+	*=$E41A     ;OPBIOS START ADDR.  	      
+START=$00               
+IOBYTE=$03    ;I/0 BYTE          
+COUNTER=$04    ;PAGE NO. COUNTER         
+DEREG=$09    ;WORK STORAGES          
+HLREG=$0B               
+HLREG1=$0D               
+FLAG=$0F               
+TEMP=$1F               
+IOBFFG=$39    ;'FLUSH' FLAG          
+CRTDSK=$3A    ;CURRENT DISK NO.         
+BLKNB1=$42    ;BLOCK#           
+SECNB1=$43    ;SECTOR#           
+TKNDER=$44    ;PREVIOUS TRACK# WHICH THEN        
+      ;CHANGE TO DESIRED TRACK#      
+TRKDRC=$45    ;DESIRED TRACK#          
+DMAREG=$46    ;DMA ADDRESS          
+TRKCRN=$48    ;HEAD POSITION TRACK#         
+TKTMAX=$49    ;MAX TIMES FOR MATCHING TRACK#       
+ERORFG=$4A    ;ERROR FLAG          
+STATFG=$4B    ;STATE FLAG          
+IOBUFA=$4C               
+PAGNUB=$4E    ;PAGE COUNT          
+ERTMAX=$4F    ;R/W MAX TIMES         
+DVACIA=$C010   ;DISK I/O PORT          
+DVPIA1=$C000   ;DISK CONTROL           
+DVPIA2=$C002   ;DISK CONTROL           
+CLACIA=$FC00   ;CONSOLE I/O PORT          
+PTACIA=$CF02   ;PRINTER I/O PORT          
+SLACIA=$CF00   ;SERIAL COMMUNICATION I/O PORT         
+USACI1=$FB03   ;USER USING I/O PORT         
+USACI2=$F400   ;USER USING I/O PORT         
+IOBUF=$B000    ;DISK I/O BUFFER ADDR.        
+CCPSAT=$D000   ;CCP ENTRY NO. 1         
+CCPST1=$D3F5   ;CCP ENTRY NO. 2         
+BDOS=$D93F    ;BDOS ENTRY          
+WHBCOT  .BYTE $28            
+FRYCST  .BYTE $62           
+DKCONT  .BYTE $40,$00            
+DIKCRT  .BYTE $00          
+PAMTAB  .WORD DIRBUF,MAPAR0,CHKAR0,$0000  ;DIAK PARA.         
+	.WORD DIRBUF,MAPAR1,CHKAR1,$0000  ;HEAD TABLE  
+	
+		       
+;               
+;*****************************************************               
+;  *             *
+;  * NUMBER 0 : INITIALIZE INPUT/OUTPUT PORT   *    
+;  *             *
+; *****************************************************              
+               
+B00T=*              
+;               
+ LDA  #$80   ;SET IOBYTE TO INDICATE SELECTING     
+      ;PRINTER IN LIST FIELD AND     
+ STA  IOBYTE   ;SELECTING CONSOLE IN CONSLE FIELD     
+ LDY  #$00   ;SET DVPIA1+1 BIT 2 TO ZERO,INDICAT    
+      ;DVPIA1 IS DIRECTION REGISTER NOW.     
+ STA  DVPIA1+1            
+ LDY  #$40   ;SET DVPIA1 BIT 6  OUTPUT AND REST  
+      ;INPUT         
+ STY  DVPIA1             
+ LDY  #$04   ;SET BACK INDICATING DVPIA1 IS     
+      ;CONTROL GATE NOW       
+ STY  DVPIA1+1            
+ LDA  #$03    ;INITIAIZE CONSOLE PORT      
+ STA  CLACIA            
+ LDY  #$11            
+ STY  CLACIA            
+ STA  PTACIA    ;INITIALIZE PRINTER PORT      
+ STY  PTACIA            
+ STA  SLACIA    ;INITIALIZE SERIAL COMMUN. PORT     
+ STY  SLACIA            
+ LDA  USACI1+3   ;INITIALIZE USER PORT1       
+ LDX  #$FF            
+ STX  USACI1+2            
+ LDY  #$00    ;INITIALIZE USER PORT2      
+ STY  USACI2+1            
+ STY  USACI2            
+ STY  USACI2+3            
+ STX  USACI2+2            
+ LDA  #$04            
+ STA  USACI2+1            
+ STA  USACI2+3            
+ RTS              
+;               
+; *****************************************************              
+; *             * 
+; *  NUMBER 1 : WARM BOOT        *
+; *             * 
+; *****************************************************              
+               
+WBOOT=*               
+               
+	 NOP               
+	 LDA  #<CCPSAT   ;SET STARTING ADDR, OF CCP FOR DMA    
+	 LDX  #CCPSAT/256             
+	 JSR  STDMA1             
+	 LDA  #$00     ;SELECT DRIVE A      
+	 STA  DIKCRT             
+	 JSR  DIKSEL             
+	 LDA  #$01   ;SELECT TRACK 1        
+	 STA  TRKDRC             
+	 LDA  #$00   ;SELECT SECTOR 0        
+	 STA  SECNB1             
+	LDA  #$10   ;SET READ SECTOR FLAG       
+	STA  FLAG             
+W_OOT=*               
+	JSR  RWDBS1   ;READ A SECTOR FROM DISK      
+	CLC               
+	LDA  #$80   ;NO INCREASE DMAREG TO GET NEXT     
+	      ;SECTOR         
+	ADC  DMAREG             
+	STA  DMAREG             
+	BCC  WB_OT             
+	INC  DMAREG+1             
+WB_OT=*              
+	INC  SECNB1    ;SET SECTOR NUMBER WITHIN ONE TRACK    
+	LDA  SECNB1             
+	CMP  #$1C   ;ONE TRACK IS DONE?       
+	BNE  W_OOT   ;IF NOT,KEPT READING        
+	LDA  #<DFBUFA   ;RECOVE DEFAULT BUFFER        
+	LDX  #DFBUFA/256             
+	JSR  STDMA1             
+	LDA  #$4C             
+	STA  START+5   ;SET JMP BDOS AT$05       
+	STA  START     ;SET JMP WBOOT AT $0.00    
+	LDA  #<WBOOT             
+	STA  START+1             
+	LDA  #WBOOT/256            
+	STA  START+2             
+	LDA  #<BDOS             
+	STA  START+6             
+	LDA  #BDOS/256             
+	STA  START+7             
+	LDA  #$00             
+	STA  IOBFFG             
+	JMP  CCPSAT             
+	               
+CONTST=*    ;CONSOLE TEST FOR RECEIVE READY       
+	               
+	LDA  CLACIA    ;TEST BIT 0 OF CLACIA FOR READY   
+	AND  #$01             
+	BNE  C_LTST             
+	RTS      ;IF NOT READY,RETURN WITH A=$00     
+C_LTST=*               
+	LDA  #$FF   ;IF READY,RETURN WITH A=$FF       
+	RTS               
+	;               
+CONIN=*     ;READ A CHARACTER FROM CONSOLE      
+	;               
+	JSR  CONTST    ;TEST FOR CONSOLE'S READY,IF NOT     
+	BEQ  CONIN    ;KEPT TESTING        
+	LDA  CLACIA+1  ;IF READY,READ A CHARACTER        
+	AND  #$7F   ;MASK OFF IT'S BIT 7      
+	RTS               
+	               
+CONTOT=*    ;CONSOLE TEST FOR TRANSMIT READY       
+	               
+	LDA  CLACIA    ;TEST BIT1 OF CLACIA FOR READY    
+	AND  #$02             
+	BNE  C_NTOT             
+	RTS      ;IF NOT READY,RETURN WITH A=$00     
+C_NTOT=*               
+	LDA  #$FF   ;IF READY,RETURN WITH A=$FF       
+	RTS               
+	;               
+CONOUT=*    ;OUTPUT  A CHARACTER TO CONSOLE      
+	               
+	JSR  CONTOT    ;KEPT TESTING UNTIL IS READY     
+	BEQ  CONOUT             
+	STX  CLACIA+1   ;SENT A CHARACTER TO CONSOLE      
+	RTS               
+	;               
+PRTTST=*    ;PRINTER TEST FOR TRANSMIT READY       
+	;               
+	 LDA  PTACIA   ;TEST BIT1 OF PTACIA FOR READY    
+	 AND  #$02            
+	 BNE  P_TTST            
+	 RTS      ;IF NOT READY,RETURN WITH A=$00    
+P_TTST=*              
+	 LDA  #$FF   ;IF READY, RETURN WITH A=$FF     
+	RTS               
+	               
+PRTOUT=*    ;PRINTER OUTPUT          
+	               
+	JSR  PRTTST    ;KEPT TESTING,UNTIL IS READY      
+	BEQ  PRTOUT             
+	STX  PTACIA+1  ;OUTPUT A CHARACTER         
+	LDA  PTACIA    ;TEST FOR RECEIVING READY      
+	AND  #$01             
+	BNE  P_TOUT             
+	RTS       ;IF NOT,RETURN       
+P_TOUT=*               
+	LDA  PTACIA+1  ;IF READY,READ A CHARACTER        
+	CMP  #$13    ;CONTROL-S         
+	BNE  PR_OUT   ;IF NOT CONTROL-S RETURN       
+	RTS               
+PR_OUT=*               
+	LDA  PTACIA    ;IF CONTROL-S WAIT UNTL CONTROL-Q     
+	AND  #$01    ;IS RECEIVED        
+	BEQ  PR_OUT             
+	CMP  #$11             
+	 BNE  PR_OUT            
+	 RTS              
+	;               
+SRLTST=*     ;SERIAL COMMUN. RECEIVE READY TEST      
+	;               
+	 LDA  SLACIA   ;THE BIT 0 OF SLACIA FOR READY   
+	 AND  #$01            
+	BNE  S_LTST    ;NOT,RETURN WITH A=$00       
+	RTS               
+S_LTST=*               
+	LDA  #$FF    ;READY,RETURN WITH A=$FF       
+	RTS               
+;               
+SRLIN=*               
+               
+ JSR  SRLTST   ;KEPT TESTING,UNTIL IS READY       
+ BEQ  SRLIN            
+ LDA  SLACIA+1   ;READ A CHARACTER       
+ AND  #$7F   ;MASK OFF IT'S BIT 7     
+ RTS              
+;               
+SRLTOT=*    ;SERIAL COMMUN. TRANSMIT READY TEST      
+;               
+ LDA  SLACIA   ;TEST BIT 1 OF SLACIA FOR READY   
+ AND  #$02            
+ BNE  S_LTOT            
+ RTS      ;IF NOT,RETURN WITH A=$00     
+S_LTOT=*              
+ LDA  #$FF   ;IF READY,RETURN WITH A=$FF      
+ RTS              
+;               
+SRLOUT=*               
+               
+	JSR SRLTOT    ;KEPT TESTING,UNTIL SLACIA IS       
+	      ;READY         
+	BEQ SRLOUT              
+	STX SLACIA+1   ;OUTPUT A CHARACTER         
+	RTS               
+	               
+	               
+OUTBFF=*               
+	               
+	LDY  #$00             
+OU_BFF=*               
+	LDA  (DEREG),Y             
+	CMP  #$24             
+	BNE  O_TBFF             
+	RTS               
+O_TBFF=*               
+	TAX               
+	JSR  CONOUT             
+	INY               
+	BNE  OU_BFF             
+	               
+	               
+	               
+	;  *****************************************************             
+	;  *             *
+	;  * NUMBER 2 :  SAMPLE THE STATUS OF THE CURRENTLY  * 
+	;  *    ASSIGNED CONSOLE DEVICE    *   
+	;  *             *
+;	 *****************************************************              
+;	 *             * 
+	;  * RETURNED VALUE :         * 
+	; *  REGISTER A : $FF READY TO READ    *  
+	; *     $0.00 NOT READY      * 
+	; *             * 
+	;  *****************************************************             
+	;               
+CSLTET=*              
+	               
+	 LDA  IOBYTE   ;GET THE CONSLE FIELD OF IOBYTE    
+	 AND  #$03            
+	 BNE  C_LTET            
+	 JMP  CONTST   ;IF #$00 TO CONSOLE TEST     
+C_LTET=*              
+	 CMP  #$01            
+	 BNE  CS_TET            
+	 JMP  PRTTST   ;IF #$01 TO PRINT TEST     
+CS_TET=*              
+	 CMP  #$03            
+	 BNE  CSL_ET            
+	JMP  USRTST   ;IF #$03 TO USER TEST      
+CSL_ET=*               
+	JMP  SRLTST   ;IF #$02 TO SERIAL TEST      
+	;               
+	; *****************************************************              
+;	*             *  
+	; * NUMBER 3 : READ FROM THE CURRENT ASSIGNED CONSLE *    
+	; *    DEVICE         * 
+;;	*             *  
+;	*****************************************************               
+;	*             *  
+;	* RETURNED VALUE :          *  
+;;	*  REGISTER A : CHARACTER TO BE READ IN   *   
+;	*             *  
+;	*****************************************************               
+	               
+CLINN=*               
+	               
+	LDA  IOBYTE    ;GET THE CONSOLE FIELD OF IOBYTE    
+	AND  #$03             
+	BNE  C_INN             
+CLIN_=*               
+	JMP  CONIN    ;IF #$00 TO CONSOLE IN     
+C_INN=*               
+	CMP  #$01             
+	BNE  CL_NN             
+	JMP  SRLIN    ;IF #$01 TO SERIAL COMMUNICATOR IN    
+CL_NN=*               
+	 CMP  #$03            
+	 BNE  CLIN_    ;IF #$02 TO CONSOLE IN    
+	 JMP  USRIN    ;IF #$30 TO USERIN     
+	               
+	; *****************************************************              
+	; *             * 
+	; * NUMBER 4 : OUTPUT CHARACTER TO THE CURRENTLY  *    
+	; *    ASSIGNED CONSOLE DEVICES    *    
+	; *             * 
+	; *****************************************************              
+	; *             * 
+	; * ENTRY PARAMETERS 1         *  
+	; * REGISTER A : CHARACTER TO BE OUTPUT    *   
+	; *             * 
+	; *****************************************************              
+	               
+CLOUTT=*               
+	;               
+	TAX               
+	LDA  IOBYTE   ;GET CONSOLE FIELD OF IOBYTE      
+	AND  #$03             
+	BNE  C_OUTT             
+CLOU_T=*               
+	JMP  CONOUT   ;IF #$00 TO CONSLE OUT      
+C_OUTT=*               
+	CMP  #$01             
+	BNE  CL_UTT             
+	JMP  SRLOUT   ;IF #$01 TO SERIAL COMMUNICATON OUT     
+CL_UTT=*               
+	 CMP  #$03            
+	 BNE  CLOU_T   ;IF #$02 TO CONSOLE OUT     
+	 JMP  USROUT   ;IF #$03 TO USER OUT     
+	;               
+	; *****************************************************              
+	 ; *             *
+;	* NUMBER 5 :  OUTPUT CHARACTER TO THE CURRENTLY  *    
+;	*     ASSIGNED LIST DEVICE     *   
+;	*             *  
+;	*****************************************************               
+;	*             *  
+;	 * ENTRY PARAMETERS :         *  
+;	*  REGISTER A : CHARACTER TO BE OUTPUT    *   
+;	*             *  
+;	*****************************************************               
+	               
+LITOUT=*               
+	               
+	TAX               
+	LDA   IOBYTE    ;GET LIST FIELD OF IOBYTE    
+	AND   #$C0            
+	BNE   L_TOUT            
+LITO_T=*               
+	JMP  CONOUT    ;IF #$00 TO CONSLE OUT     
+L_TOUT=*               
+	CMP  #$01             
+	 BNE  LI_OUT            
+	 JMP  SRLOUT   ;IF #$01 TO SERIAL COMMUN. OUT    
+
+LI_OUT=*               
+	 CMP  #$03            
+	 BEQ  LITO_T   ;IF #$03 TO CONSOLE      
+	 JMP  PRTOUT   ;IF #$02 TO PRINTER OUT     
+	;               
+	 ; *****************************************************             
+	 ; *             *
+;	* NUMBER 6 :  OUTPUT A CHARACTER TO THE CURRENTLY *    
+;	*    ASSIGNED PUNSH DEVICE    *     
+	; *             * 
+;	*****************************************************               
+;	*             *  
+	; * ENTRY PARAMETERS :         *  
+;	*  REGISTER A : A CHARACTER TO BE OUTPUT    *  
+;	*             *  
+;	*****************************************************               
+	               
+PUHOUT=*    ;RESERVE FOR FURTHER USE        
+	;               
+	 ; *****************************************************             
+	 ; *             *
+	; * NUMBER 7 : READ A CHARACTER FROM THE CURRENTYLY  *   
+	;  *   ASSIGNED READER DEVICE      *  
+	 ; *             *
+	; *****************************************************              
+	; *             * 
+	;  * RETURNED VALUE :          *
+	;  * REGISTER A : A CHARACTER BE READ IN    * 
+	; *             * 
+;	*****************************************************               
+	               
+READIN=*    ;RESERVE FOR FURTHER USE        
+	               
+USRTST=*     ;RESERVE FOR FURTHER USE       
+USROUT=*     ;AS ABOVE         
+USRIN=*     ;AS ABOVE         
+	LDA  #$25             
+	JMP  ERROR             
+	               
+DELAYB=*    ;DELAY ROUTINE          
+	               
+	INC  DELYMR             
+	INC  DELYMR             
+	INC  DELYMR             
+	INC  DELYMR             
+	RTS               
+DELYMR*=*+1               
+	               
+	               
+DELYMS=*    ;DELAY 1 MS         
+	               
+	JSR  DELAYB             
+	DEY               
+	BNE  DELYMS             
+	RTS               
+	               
+DLYMS1=*    ;DELAY (X) MS         
+	               
+	LDX  #$0C             
+D_YMS1=*               
+	LDY  FRYCST             
+	JSR  DELYMS             
+	DEX               
+	BNE  D_YMS1             
+DL_MS1=*               
+	RTS               
+	;               
+DELYUS=*    ;DELAY (X)*100 US         
+	;               
+	LDA  FRYCST             
+D_LYUS=*               
+	BIT  $00           
+	SEC               
+	SBC  #$05             
+	BCS  D_LYUS             
+	DEX               
+	BNE  DELYUS             
+	RTS               
+	;               
+	; *****************************************************              
+	; *             * 
+	; * NUMBER 8 : POSITION HEAD TO TRACK 0     * 
+	; *             * 
+;	*****************************************************               
+	;               
+HOMEHD=*    ;HOME HEAD TO ZERO        
+	;               
+	JSR  STPIN             
+	JSR  DLYMS1             
+	STY  TRKCRN             
+	STY  TKNDER             
+H_MEHD=*               
+	LDA  #$02             
+	BIT  DVPIA1             
+	BEQ  DLYMS1             
+	JSR  STPOUT             
+	BEQ  H_MEHD             
+	               
+ASLDS1=*     ;(A) * 2'S POWER OF (X)     
+	               
+	ASL               
+	ROL  TEMP             
+	DEX               
+	BNE  ASLDS1             
+	RTS               
+	               
+ADCOF1=*               
+	               
+	CLC               
+	ADC  HLREG             
+	STA  HLREG             
+	LDA  TEMP             
+	ADC  HLREG+1             
+	STA  HLREG+1             
+	RTS               
+	;               
+ADCIOF=*               
+	;               
+	LDX  #<IOBUF            
+	STX  HLREG             
+	LDX  #IOBUF/256             
+	STX  HLREG+1             
+	 JMP  ADCOF1            
+	;               
+DIKSEL=*     ;GET DESIRED DISK PARAMETERS      
+	;               
+	LDX  DIKCRT             
+	LDA  DKCONT,X             
+	STA  DVPIA1             
+	LDA  #$FF             
+	STA  DVPIA2             
+D_KSEL=*               
+	LDA  #$10             
+	CPX  #$01             
+	BEQ  DI_SEL             
+	LDA  #$01             
+DI_SEL=*               
+	BIT  DVPIA1             
+	RTS               
+	;               
+	; *****************************************************              
+;	*             *  
+	;  * NUMBER 9 : SELECT DISK        *
+	 ; *             *
+	 ; *****************************************************             
+	 ; *             *
+	;  * ENTRY PARAMETERS :        *  
+	; * REGISTER A : DISK NUMBER       *  
+	 ; *             *
+;	*****************************************************               
+	;               
+DKSEL1=*               
+	;               
+	 STA  DIKCRT   ;STORE DESIRED DISK NO.      
+	 LDX  #$03   ;*8 TO GET OFFSET      
+	 JSR  ASLDS1            
+	 LDX  #<PAMTAB           
+	 STX  HLREG            
+	 LDX  #PAMTAB/256            
+	               
+	               
+	               
+	               
+	               
+	               
+	               
+	               
+	 STX  HLREG+1            
+	 LDX  #$00            
+	STX  TEMP             
+	 JSR  ADCOF1    ;GET DESIRED ENTRY ADDR.     
+	 JSR  DIKSEL   ;GET PARA. & TEST DISK READY    
+	 BNE  D_SEL1            
+	JMP  HOMEHD    ;READY! HOME HEAD       
+D_SEL1=*               
+	JMP  TRKPS1   ;IF DISK NOT READY,ERR       
+	 ;              
+	 ; *****************************************************             
+	; *             * 
+	; * NUMBER 10 : SET TRACK NUMBER      *  
+	 ; *             *
+	; *****************************************************              
+	; *             * 
+;	 * ENTRY PARAMETERS :         *  
+;	*  REGISTER A : TRACK NUMBER      *   
+	 ; *             *
+;	*****************************************************               
+	               
+SETTR1=*              
+	               
+	 STA  TRKDRC            
+	 RTS              
+	;               
+	; *****************************************************              
+	; *             * 
+;	* NUMBER 11 : SET SECTOR NUMBER      *   
+	 ; *             *
+;	*****************************************************               
+;	*             *  
+;	* ENTRY PARAMETERS :        *    
+;	*  REGISTER A : SECTOR NUMBER      *   
+	; *             * 
+;	*****************************************************               
+	               
+SETSC1=*              
+	               
+	 STA  SECNB1            
+	 RTS              
+	               
+;	*****************************************************               
+;	*             *  
+;	* NUMBER 12 : SET BLOCK NUMBER      *   
+	 ; *             *
+	; *****************************************************              
+;	*             *  
+;	* ENTRY PARAMETERS :        *    
+;	*  REGISTER A : BLOCK NUMBER     *    
+	; *             * 
+	; *****************************************************              
+	               
+SETBL1=*              
+	               
+	STA  BLKNB1             
+	RTS               
+	;               
+	; *****************************************************              
+	; *             * 
+	; * NUMBER 13 : SET DMA         *
+	 ; *             *
+	; *****************************************************              
+	; *             * 
+	; * ENTRY PARAMETERS :        *   
+	; *   REGISTER A,X : DMA ADDRESS       *
+	; *             * 
+	; *****************************************************              
+	               
+STDMA1=*               
+	               
+	STA  DMAREG             
+	STX  DMAREG+1             
+	RTS               
+	               
+SEKIHL=*    ;SEEK INDEX HOLE         
+	               
+	LDA  DVPIA1             
+	BMI  SEKIHL             
+S_KIHL=*               
+	LDA  DVPIA1             
+	BPL  S_KIHL             
+	RTS               
+	               
+STPOUT=*    ;STEP OUT ONE TRACK        
+	               
+	LDA  DVPIA2   ;SET BIT 2 OF DVPIA2      
+	ORA  #$04             
+	BNE  STEP             
+STPIN=*     ;STEP IN ONE TRACK       
+	LDA  #$FB             
+	AND  DVPIA2    ;RESET BIT 2 OF DVPIA2     
+STEP=*               
+	STA  DVPIA2    ;STEP IN OR OUT ACCORDINGLY     
+	JSR  DL_MS1    ;DELAY!         
+	AND  #$F7    ;SENT A PULSE TO STEP HEAD    
+	STA  DVPIA2             
+	JSR  DL_MS1             
+	JSR  DL_MS1             
+	ORA  #$08             
+	STA  DVPIA2             
+	JSR  DL_MS1    ;DELAY!         
+	LDX  #$08             
+	JMP  D_YMS1   ;DELAY!          
+	               
+SIHSDK=*    ;SEEK HOLE ,SET ACIA        
+	               
+	JSR SEKIHL              
+	LDA  #$03             
+	STA  DVACIA             
+	LDA  #$58             
+	STA  DVACIA             
+	RTS               
+	               
+LDHEAD=*     ;LOAD HEAD         
+	               
+	LDA  #$7F   ;RESET BIT 7 OF DVPIA2      
+	AND  DVPIA2             
+L_HEAD=*               
+	STA  DVPIA2   ;LOAD OR UNLOAD HEAD ACCORDINGLY      
+	LDX  #$28    ;DELAY         
+	JMP  D_YMS1             
+	               
+UNLDHD=*    ;UNLOAD HEAD          
+	LDA  #$80   ;SET BIT 7 OF DVAPIA2      
+	 ORA  DVPIA2            
+	BNE  L_HEAD             
+	               
+WRTDIK=*    ;WRITE A BYTE TO DISK       
+	               
+	LDA  DVPIA1   ;INDEX HOLE FOUND?        
+	BPL  W_TDIK             
+	LDA  DVACIA    ;READY?         
+	LSR               
+	LSR               
+	BCC  WRTDIK   ;IF NO,KEEP TESTING!        
+	STX  DVACIA+1  ;WRITE A BYTE TO DISK       
+	RTS               
+W_TDIK=*               
+	LDA  #$20   ;IF INDEX HOLE FOUND, ERR!      
+	JMP  ERROR             
+	               
+REDDIK=*    ;READ ABYTE FROM DISK        
+	               
+	LDA DVPIA1    ;INDEX HOLE FOUND?        
+	BPL R_DDIK    ;FOUND, ERROR!         
+	LDA DVACIA     ;READY?         
+	LSR               
+	BCC REDDIK    ;IF NO, KEEP TESTING       
+	LDA DVACIA+1   ;READ IN A CHAR.        
+	RTS               
+R_DDIK=*               
+	LDA #$21     ;INDEX HOLE FOUND,ERROR!       
+	JMP ERROR              
+	               
+TRKPSA=*    ;PUT HEAD TO DESIRED TRACK       
+	               
+	LDX  DIKCRT   ;DESIRED DISK READY?        
+	JSR  D_KSEL             
+	BEQ  T_KPSA             
+TRKPS1=*               
+	LDA  #$22   ;NOT READY,ERROR!         
+	 JMP  ERROR            
+T_KPSA=*              
+	 LDA  TKNDER    ;CURRENT DESIRED TRACK =     
+	CMP  TRKCRN   ;CURRENT HEAD POSITION?        
+	BEQ  TR_PSA   ;IF EQUAL, FINISH STEPIN6       
+	BCS  TRK_SA   ;IF GREATER,STEP IN ONE TRACK      
+	JSR  STPOUT   ;OIF LESS,STEP OUT ONE TARACK      
+	LDA  #$99    ;AND SET A' TO 99 INDICATING    
+	BCC  TRKP_A   ;SUBTRACTING ONE TRACK        
+TRK_SA=*               
+	JSR STPIN              
+	 TXA              
+TRKP_A=*              
+	 SED              
+	ADC  TRKCRN   ;+ (OR -) ONE TO (OR FROM)    
+	 STA  TRKCRN   ;CURRENT HEAD POSITION       
+	 CLD              
+	 JMP  T_KPSA   ;KEEP STEPIN6 UNTIL DONE      
+TR_PSA=*              
+	 CMP  #$43    ;CHECK CURRENT TRACK RANGE     
+	 LDA  DVPIA2   ;IF IN NO.43-76, RESET BIT 7    
+	 AND  #$BF    ;OF DVPIA2 TO ADJUST CURRENT    
+	 LDY  #$00            
+	NOP               
+	BCS  TRKPS_             
+	LDA  #$40    ;IF IN NO.0-42, SET BIT 7    
+	ORA  DVPIA2   ;OF DVACIA         
+TRKPS_=*               
+	STA  DVPIA2             
+	RTS               
+	               
+TRKPSH=*               
+	               
+	JSR  TRKPSA   ;POSITION HEAD         
+	LDA  #<IOBUF   ;SET DISK I/O BUFFER ADDR.      
+	STA  IOBUFA             
+	LDA  #IOBUF/256             
+	 STA  IOBUFA+1            
+	 JMP  LDHEAD   ;LOAD HEAD        
+	               
+TKNMTH=*    ;MATCH TRACK#          
+	               
+	LDA  #$05    ;SET MAX. TRACK READ TIMES     
+	STA  TKTMAX             
+TKNM_H=*               
+	JSR  SIHSDK   ;SEEK INDEX HOLE, SET DVACIA      
+T_NMTH=*               
+	JSR  REDDIK   ;READ A BYTE INTO A'      
+TK_MTH=*               
+	CMP  #$43    ;FIND TRACK IDENTIFICATION       
+	BNE  T_NMTH   ;NO. $43.00 & $57.00       
+	JSR  REDDIK             
+	CMP  #$57             
+	 BNE  TK_MTH            
+	JSR  REDDIK    ;CHECK TRACK NO.       
+	CMP  TKNDER             
+	BNE  TKN_TH             
+	RTS      ;IF MATCH,RETURN!        
+TKN_TH=*    ;IF NOT,HOME HEAD AND TRY AGAIN      
+	DEC  TKTMAX    ;MAX, TIME EXCEED?       
+	BEQ  TKNMT_             
+	LDA  TKNDER   ;NO? SAME CURRENT DESIRED NO.      
+	PHA               
+	JSR  HOMEHD   ;HOME HEAD!         
+	PLA               
+	STA  TKNDER    ;RECOVE TRACK NO.       
+	JSR  T_KPSA    ;POSITION HEAD AGAIN       
+	JMP  TKNM_H   ;MATCHT THEM AGAIN!        
+TKNMT_=*               
+	LDA  #$23    ;MAX, EXHAUSTED, ERROR!       
+	JMP  ERROR             
+	               
+WRTTKS=*    ;WRITE A TRACK TO DISK      
+	;               
+	LDA  #$20    ;INDEX HOLE FOUND!       
+	BIT  DVPIA1             
+	BNE  W_TTKS             
+	LDA  #$24    ;IF FOUND, ERROR!       
+	JMP  ERROR             
+W_TTKS=*               
+	JSR  TKNMTH    ;CHECK IF TRACK NO, ARE MATCHED    
+	LDX  #$04    ;DELAY!         
+	JSR  DELYUS             
+	LDA  #$FE    ;ENABLE ERASING        
+	AND  DVPIA2             
+	STA  DVPIA2             
+	LDX  #$02   ;DELAY!          
+	JSR  DELYUS             
+	LDA  #$FD   ;ENABLE WRITING         
+	AND  DVPIA2             
+	STA  DVPIA2             
+	LDX  #$08   ;DELAY!          
+	JSR  DELYUS             
+	LDX  #$76   ;WRITE START FLAG $76.00       
+	JSR  WRTDIK             
+	LDX  #$0E   ;SET 14 PAGES        
+	STX  PAGNUB             
+	LDY  #$00             
+WR_TKS=*               
+	LDA  (IOBUFA),Y  ;GET A BYTE FROM DISK I/O      
+	TAX      ;BUFFER AND WRITE IT      
+	JSR  WRTDIK   ;TO THE DISK        
+	 INY              
+	BNE  WR_TKS             
+	INC  IOBUFA+1             
+	DEC  PAGNUB   ;KEEP DOING UNTIL 14 PAGE DONE     
+	BNE  WR_TKS             
+	LDX  #$47   ;WRITE END FLAG        
+	 JSR  WRTDIK            
+	 LDX  #$53            
+	 JSR  WRTDIK            
+	LDA  DVPIA2   ;DISABLE WRITING         
+	 ORA  #$01            
+	STA  DVPIA2             
+	LDX  #$05   ;DELAY!          
+	JSR  DELYUS             
+	LDA  DVPIA2    ;DISABLE ERASING        
+	ORA  #$02             
+	STA  DVPIA2             
+	LDA  #IOBUF/256             
+	STA  IOBUFA+1   ;RECOVE I/O BUFFER ADDR,1       
+	RTS               
+	               
+REDTKS=*    ;READ A TRACK         
+	;               
+	JSR  TKNMTH   ;MATCH TRACK NO.        
+R_DTKS=*               
+	JSR  REDDIK    ;FIND DATA AREA START FLAG     
+	CMP  #$76             
+	BNE  R_DTKS             
+	LDX  #$0E    ;SET TOTAL PAGE NO. 14     
+	LDY  #$00             
+	STY  ERORFG    ;INIT ERR FLAG       
+	LDA  #$01             
+RE_TKS=*               
+	BIT  DVACIA    ;READY?         
+	BEQ  RE_TKS             
+	LDA  DVACIA+1   ;READ A BYTE        
+	BVC  RED_KS    ;PARITY ERR?        
+	LDA  #$80    ;IF IS, SET ERR FLAG     
+	STA  ERORFG             
+R__TKS=*               
+	CLC      ;RESET CARRY TO INDICATE ERR     
+	RTS               
+RED_KS=*               
+	BIT  STATFG             
+	BPL  REDTK_             
+	CMP  (IOBUFA),Y  ;YES, COMPARE IT WITH THE ONE      
+	BEQ  REDTK_   ;IN THE I/O BUFFER READ IN BEFORE    
+	LDA  #$40   ;IF NOT, SET ERR FLAG      
+	STA  ERORFG             
+	BNE  R__TKS             
+REDTK_=*               
+	STA  (IOBUFA),Y             
+	LDA  #$01             
+	INY               
+	BNE  RE_TKS    ;ONE PAGE DONE?       
+	INC  IOBUFA+1   ;YES, INCREAMENT HIGH BYTE       
+	DEX               
+	BNE  RE_TKS   ;14 PAGE DONE?        
+	LDA  #IOBUF/256             
+	STA  IOBUFA+1  ;RECOVE I/O BUFFER ADDR.        
+	SEC      ;SET CARRY INDICATING NO ERR     
+	RTS               
+	               
+WRTTRK=*    ;WRITE A TRACK UTILL NO ERROR      
+	               
+	LDA  #$A0   ;SET NO REREAD MODE       
+	STA  STATFG             
+	JSR  TRKPSH   ;POSITION HEAD TO DESIRED TRACK      
+	LDA  #$04   ;SET MAX. WRITE TIMES       
+	STA  ERTMAX+1             
+W_TTRK=*               
+	JSR  WRTTKS   ;WRITE A TRACK        
+	JMP  RE_TRK   ;GO TO REREAD MODE TO CHECK     
+	               
+REDTRK=*    ;;READ A TRACK UNTIL NO ERROR      
+	               
+	LDA  #$40    ;SET NO REREAD MODE      
+	STA  STATFG             
+	JSR  TRKPSH    ;POSITION HEAD TO DESIRED TRACK     
+	LDA  #$04             
+	STA  ERTMAX             
+RE_TRK=*               
+	LDA  #$06             
+	STA  ERTMAX+2             
+REDT_K=*               
+	JSR  REDTKS   ;READ A TRACK        
+	BCC  REREAD   ;IF ERR, GO TO ERR HANDLING     
+	BIT  STATFG   ;REREAD MODE/?         
+	BMI  R_DTRK             
+	LDA  #$80    ;IF NOT, SET FLAG TO INDICATE    
+	ORA  STATFG   ;NOW IS IN REREAD MODE      
+	STA  STATFG             
+	BNE  RE_TRK   ;AND GO BACK TO REREAD!      
+R_DTRK=*               
+	JMP  UNLDHD   ;IF IS REREAD,UNLOAD HEAD, FINISH      
+	NOP               
+REREAD=*    ;ERR HANDLING          
+	LDA  #IOBUF/256             
+	STA  IOBUFA+1             
+	DEC  ERTMAX+2             
+	BNE  REDT_K             
+	BIT  ERORFG             
+	BMI  RE_EAD             
+	BIT  STATFG             
+	BVS  R_READ             
+	DEC  ERTMAX+1             
+	BNE  W_TTRK             
+R_READ=*               
+	LDA  ERORFG             
+	JMP  ERROR             
+RE_EAD=*               
+	DEC  ERTMAX             
+	BEQ  R_READ             
+	JSR  STPOUT             
+	JSR  DLYMS1             
+	JSR  STPIN             
+	JSR  DLYMS1             
+	BEQ  RE_TRK             
+RESV27*=*+5               
+	;               
+	; *****************************************************              
+	; *             * 
+	; * NUMBER 14 : READ/WRITE B/S FROM/TO DISK    *   
+	; *             * 
+;	*****************************************************               
+	;               
+RWDBS1=*    ;READ/WRITE B/S FROM/TO DISK       
+	;               
+	LDA  TKNDER    ;TRACK 0?        
+	BEQ  RWDB__             
+	CMP  TRKDRC    ;DESIRED TRACK = CURRENT TRACK?     
+	BEQ  R_DBS1    ;YES, NO DISK I/O      
+	BIT  IOBFFG    ;'FLUSH' FLAG SET?       
+	BPL  RWDB__   ;IF NO, NO WRITING BACK      
+	JSR  WRTTRK   ;WRITE BACK TO CURRENT TRACK      
+RWDB__=*               
+	LDA  TRKDRC    ;STORE DESIRED NO, TO CURRENT NO.    
+	STA  TKNDER             
+	JSR  REDTRK   ;READ THIS TRACK        
+	LDA  #$00    ;FLUSH FLUSH' FLAG       
+	STA  IOBFFG             
+R_DBS1=*               
+	BIT  FLAG   ;WRITE OR READ?        
+	BVC  RWD___             
+	LDA  #$80   ;IF WRITE? SET FLUSH' FLSA6      
+	STA  IOBFFG             
+RWD___=*               
+	NOP               
+	NOP               
+	NOP               
+	NOP               
+	NOP               
+	LDA  DMAREG    ;SENT DMA ADDR. TO HLREG1     
+	STA  HLREG1             
+	LDA  DMAREG+1             
+	STA  HLREG1+1             
+	LDY  #$00             
+	STY  TEMP             
+	LDA  #$10    ;SECTOR OPERATION?        
+	BIT  FLAG             
+	BEQ  RE_BS1             
+	LDA  SECNB1   ;YES? READ OR WRITE A SECTOR     
+	LDX  #$07    ;BETWEEN DISK I/O BUFFER AND DMA    
+	JSR  ASLDS1             
+	JSR  ADCIOF             
+RED_S1=*               
+	BIT  FLAG             
+	BVS  REDBS_             
+	LDA  (HLREG),Y             
+	STA  (HLREG1),Y             
+	JMP  R__BS1             
+REDBS_=*               
+	LDA  (HLREG1),Y             
+	STA  (HLREG),Y             
+R__BS1=*               
+	INY               
+	CPY  #$80             
+	BNE  RED_S1             
+	RTS               
+RE_BS1=*               
+	LDA  BLKNB1    ;IF IS BLOCK OPERATION, READ     
+	LDX  #$09    ;OR WRITE A BLOCK BETWEEN     
+	JSR  ASLDS1    ;DISK I/O BUFFER AND DMA     
+	JSR  ADCIOF             
+	LDX  #$02             
+REDB_1=*               
+	BIT  FLAG             
+	BVS  RE__S1             
+	LDA  (HLREG),Y             
+	STA  (HLREG1),Y             
+	JMP  REB__1             
+RE__S1=*               
+	LDA  (HLREG1),Y             
+	STA  (HLREG),Y             
+REB__1=*               
+	INY               
+	BNE  REDB_1             
+	INC  HLREG+1             
+	INC  HLREG1+1             
+	DEX               
+	BNE  REDB_1             
+	RTS               
+RESV28*=*+5               
+	               
+SIOBDK=*    ;SENT I/O BUFFER BACK TO DISK      
+	               
+	BIT  IOBFFG    ;'FLUSH' FLAG SET?       
+	BPL  S_OBDK             
+	JSR  WRTTRK    ;IF SET, WRITE BACK TO DISK    
+	LDA  #$00             
+	STA  IOBFFG             
+S_OBDK=*               
+	RTS               
+	               
+BCDASC=*    ;CONVERT BCD TO TWO ASCII CODES      
+	               
+	PHA               
+	AND  #$0F   ;GET LOW NIBBLE        
+	CLC               
+	ADC  #$30    ;CONVERT TO ASCII CODE      
+	TAY               
+	PLA               
+	LSR               
+	LSR               
+	LSR               
+	LSR               
+	AND  #$0F   ;GET HIGH NIBB1E        
+	CLC               
+	ADC  #$30   ;CONVERT TO ASCII CODE       
+	RTS               
+	;               
+	; *****************************************************              
+	; *             * 
+	; * NUMBER 15 : ERROR HANDLING      *   
+	; *             * 
+	; *****************************************************              
+	; *             * 
+	; * ENTRY PARAMETERS :        *   
+	; *  REGISTER A : ERROR NUMBER     *   
+	; *             * 
+	; *****************************************************              
+	               
+ERROR=*               
+	               
+	JSR BCDASC     ;CONVERT ERR NO. TO 2 ASCII    
+	LDX #$0B     ;AND INSERT THEM TO THE ERR    
+	STA EROR,X     ;MESSA6E         
+	INX               
+	TYA               
+	STA EROR,X              
+	LDA CRTDSK    ;CONVERT CURRENT DISK NO.TO       
+	CLC      ;ASCII AND INSERT IT TO THE    
+	ADC #$41     ;ERR MESSAGE        
+	LDX #$16              
+	STA EROR,X              
+	LDA #<EROR     ;OUTPUT ERR MESSAGE       
+	STA DEREG              
+	LDA #EROR/256              
+	STA DEREG+1              
+	JSR OUTBFF              
+	JMP CCPST1              
+EROR  .BYTE "   OPST ERR   ON DISK  $"     
+	               
+DFBUFA*=*+512    ;DEFAULT BUF          
+DIRBUF*=*+512    ;DIRECTORY BUF          
+MAPAR0*=*+64    ;MAP AREA OF DISK A       
+MAPAR1*=*+64    ;MAP AREA OF DISK B       
+CHKAR0*=*+14    ;CHECK AREA OF DISK A       
+CHKAR1*=*+14    ;CHECK AREA OF DISK B       
+FLCTBK*=*+35   ;FILE CONTROL BLOCK          
+ .END
